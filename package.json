@@ -1,7 +1,12 @@
 {
   "dependencies": {
     "@prisma/client": "^6.8.2",
-    "express": "^5.1.0"
+    "@types/express-session": "^1.18.1",
+    "crypto": "^1.0.1",
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
+    "googleapis": "^149.0.0",
+    "node-cron": "^4.0.7"
   },
   "devDependencies": {
     "@types/express": "^5.0.2",
