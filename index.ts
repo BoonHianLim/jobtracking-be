@@ -1,11 +1,11 @@
 import express, { Express, Request, Response } from "express";
 import session from "express-session";
 
-
 import jobRouter from "./src/routes/job";
 import authRouter from "./src/routes/auth";
 import { initDB } from "./src/utils/initDB";
 import { initEnv } from "./src/utils/initEnv";
+import { initCredential, startCron } from "./src/cron/mail";
 declare module "express-session" {
   export interface SessionData {
     state: string;
@@ -40,5 +40,6 @@ app.use("/auth", authRouter);
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
-
-
+initCredential().then(() => {
+  startCron();
+});
