@@ -16,5 +16,21 @@ model Job {
   companyName String
   jobTitle    String
   status      String   @default("APPLIED")
-  createdAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  deletedAt   DateTime @default("1970-01-01T00:00:00.000Z")
+}
+
+model User {
+  id            Int      @id
+  refreshToken  String
+  expiryDate    BigInt
+  accessToken   String
+  tokenType     String
+  idToken       String
+  scope         String
+  lastRefreshAt DateTime @default("1970-01-01T00:00:00.000Z")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+  deletedAt     DateTime @default("1970-01-01T00:00:00.000Z")
 }

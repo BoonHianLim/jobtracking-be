@@ -4,7 +4,7 @@ import url from "url";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import { Request, Response } from "express";
-import { addCredential } from "../cron/mail";
+import { setNewUser } from "../cron/mail";
 
 let oauth2Client: OAuth2Client | undefined;
 const initClient = () => {
@@ -35,6 +35,7 @@ const oauth = async (req: Request, res: Response) => {
     access_type: "offline",
     scope: scopes,
     state: state,
+    prompt: "consent",
   });
   res.redirect(authUrl);
 };
@@ -53,7 +54,10 @@ const oauthCallback = async (req: Request, res: Response) => {
     try {
       const { tokens } = await client.getToken(query.code as string);
       client.setCredentials(tokens);
-      addCredential(client.credentials);
+      setNewUser({
+        credential: client.credentials,
+        lastUpdatedAt: new Date(),
+      });
       res.status(200).json({ message: "Authentication successful" });
     } catch (error) {
       let errMessage = "Internal Server Error";
