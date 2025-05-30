@@ -2,6 +2,9 @@ import cron from "node-cron";
 import { google } from "googleapis";
 import { Credentials } from "google-auth-library";
 import { getClient } from "../utils/initDB";
+import * as cheerio from "cheerio";
+import * as fs from "fs";
+import querystring from "querystring";
 
 interface User {
   credential: Credentials;
@@ -36,11 +39,7 @@ export const initCredential = async () => {
     console.warn("No credential found, skipping initialization");
   }
 };
-export const setNewUser = async (user: User | undefined) => {
-  if (!user) {
-    user = undefined;
-    return;
-  }
+export const setNewUser = async (user: User) => {
   if (!user.credential.access_token) {
     console.warn("Invalid credential received, no access token present");
     return;
@@ -92,7 +91,7 @@ export const setNewLastRefreshAt = async (date: Date) => {
 
 export const startCron = () => {
   console.log("Starting cron job to fetch emails every minute...");
-  cron.schedule("* * * * *", async () => {
+  cron.schedule("10 * * * * *", async () => {
     if (!currentUser) {
       console.warn("No credential available, skipping cron job");
       return;
@@ -142,8 +141,9 @@ export const startCron = () => {
     const newLastUpdatedAt = new Date();
     const emailList = await gmail.users.messages.list({
       userId: "me",
-      maxResults: 2,
-      q: "after:" + Math.floor(Number(currentUser.lastUpdatedAt) / 1000),
+      maxResults: 10,
+      // q: "after:" + Math.floor(Number(currentUser.lastUpdatedAt) / 1000),
+      q: "from:jobs-noreply@linkedin.com",
       labelIds: ["INBOX"],
     });
     await setNewLastRefreshAt(newLastUpdatedAt);
@@ -159,11 +159,130 @@ export const startCron = () => {
           id: email.id,
         })
         .then((emailDetails) => {
-          console.log(JSON.stringify(emailDetails.data, null, 2));
+          const sender = emailDetails.data.payload?.headers?.find(
+            (header) => header.name === "From"
+          )?.value;
+          const subject =
+            emailDetails.data.payload?.headers?.find(
+              (header) => header.name === "Subject"
+            )?.value ?? undefined;
+          const senderEmail = ((
+            sender: string | null | undefined
+          ): string | undefined => {
+            if (!sender) {
+              return undefined;
+            }
+            const start = sender.indexOf("<");
+            const end = sender.indexOf(">");
+            if (start !== -1 && end !== -1 && end > start) {
+              return sender
+                .substring(start + 1, end)
+                .trim()
+                .toLowerCase();
+            }
+            return undefined;
+          })(sender);
+          const messageParts = emailDetails.data.payload?.parts;
+          if (!messageParts) {
+            console.warn("No message parts found in email:", emailDetails.data);
+            return;
+          }
+          const htmlMessagePart = messageParts.find((messagePart) => {
+            return messagePart.mimeType == "text/html";
+          });
+          if (!htmlMessagePart) {
+            console.warn(
+              "No HTML message part found in email:",
+              emailDetails.data
+            );
+            return;
+          }
+          const encodedBody = htmlMessagePart.body?.data;
+          if (!encodedBody) {
+            console.warn(
+              "No encoded body found in email part:",
+              htmlMessagePart
+            );
+            return;
+          }
+          const decodedBody = Buffer.from(encodedBody, "base64").toString(
+            "utf-8"
+          );
+          matching(senderEmail, subject, decodedBody);
         })
         .catch((err) => {
           console.error("Error fetching email details:", err);
         });
     }
   });
+};
+
+const matching = (
+  sender: string | undefined,
+  subject: string | undefined,
+  emailContent: string
+) => {
+  if (!sender) {
+    // TODO: pass to LLM to extract information / other rule-based logic
+    return;
+  }
+  if (sender == "jobs-noreply@linkedin.com") {
+    const linkedInContent = cheerio.load(emailContent);
+    const elements = linkedInContent(
+      'a[href^="https://www.linkedin.com/comm/jobs/view/"]'
+    );
+    if (elements.length === 0) {
+      console.warn("No LinkedIn job links found in email content");
+      return;
+    }
+    const firstElement = elements.first();
+    const attachedLink = firstElement.attr("href");
+    if (!attachedLink) {
+      console.warn("No href attribute found in the first LinkedIn job link");
+      return;
+    }
+    const parseQueries = querystring.parse(attachedLink.split("?")[1]);
+    const lipi = parseQueries["lipi"];
+    if (!lipi) {
+      console.warn("No lipi query parameter found in the LinkedIn job link");
+      return;
+    }
+    if (typeof lipi !== "string") {
+      console.warn("Lipi query parameter is not a string:", lipi);
+      return;
+    }
+    if (lipi.includes("rejected")) {
+      const extractedSubjects = ((
+        subject: string | undefined
+      ):
+        | {
+            company: string;
+            jobTitle: string;
+          }
+        | undefined => {
+        if (!subject) {
+          return undefined;
+        }
+        const start = subject.indexOf("Your application to ");
+        const end = subject.indexOf(" at ");
+        if (start !== -1 && end !== -1 && end > start) {
+          return {
+            jobTitle: subject
+              .substring(start + "Your application to".length, end)
+              .trim(),
+            company: subject.substring(end + " at ".length).trim(),
+          };
+        }
+        return undefined;
+      })(subject);
+      console.log(
+        "Job application rejected for company:",
+        extractedSubjects?.company,
+        "and job title:",
+        extractedSubjects?.jobTitle
+      );
+    } else if (lipi.includes("confirmation")) {
+      console.log("Job applied, lipi:", lipi);
+    }
+  }
 };
