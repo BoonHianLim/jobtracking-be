@@ -171,6 +171,7 @@ compile_commands.json
 *.db
 *.db-journal
 .env
+!.env.example
 src/generated/prisma
 prisma/migrations
 credentials.json

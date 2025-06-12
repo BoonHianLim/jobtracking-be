@@ -20,6 +20,7 @@
   "scripts": {
     "dev": "nodemon index.ts",
     "migrate": "npx prisma migrate dev",
-    "generate": "npx prisma generate"
+    "generate": "npx prisma generate",
+    "init": "yarn generate && yarn migrate --name init"
   }
 }
